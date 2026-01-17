@@ -1,0 +1,4 @@
+.ftp
+node_modules
+.pnpm-lockfile
+.pnpm-store

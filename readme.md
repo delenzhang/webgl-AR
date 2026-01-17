@@ -1,0 +1,1 @@
+读取`specs/spec.md` 执行所有AI交付流程
