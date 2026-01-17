@@ -3,7 +3,7 @@ import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUti
 import { mainSwordVert, mainSwordFrag, swordArrayVert, swordArrayFrag } from '../shaders/swordShaders';
 import gsap from 'gsap';
 
-export type SwordState = 'FOLD' | 'RELEASE' | 'MIDDLE_UP' | 'MIDDLE_DOWN' | 'MIDDLE_LEFT' | 'MIDDLE_RIGHT' | 'MIDDLE_FORWARD' | 'MIDDLE_BACKWARD';
+export type SwordState = 'FOLD' | 'RELEASE' | 'TRACK';
 
 interface TrailPoint {
   position: THREE.Vector3;
@@ -21,6 +21,7 @@ interface SwordParticle {
   trailIndex: number; // 跟随轨迹中的哪个点
   trailFollowSpeed: number; // 每把剑跟随轨迹的独立速度（0.15-0.35）
   trailProgress: number; // 沿轨迹的运动进度（0-1），用于先慢后快
+  trackRandomSpeed: number; // TRACK 状态下的随机速度
 }
 
 export class SwordSystem {
@@ -32,6 +33,8 @@ export class SwordSystem {
   // 状态参数
   public state: SwordState = 'RELEASE';
   private centerPosition = new THREE.Vector3(0, 0, 0);
+  private middleFingerPosition = new THREE.Vector3(0, 0, 0); // 中指位置
+  private targetPointD = new THREE.Vector3(0, 0, 0); // 共享的目标点 D
   private animationProgress = 0;
   
   // 粒子系统参数
@@ -46,6 +49,11 @@ export class SwordSystem {
   private isFollowingTrail = false;
   private currentTrail: TrailPoint[] = [];
   private trailFollowDistance = 0.5; // 粒子沿轨迹的间距
+  
+  // RELEASE 状态轨迹跟随延迟控制
+  private releaseTrailDelaySeconds = 3.0; // 从 FOLD 切换到 RELEASE 后的延迟时间（秒）
+  private lastReleaseTime: number = 0; // 上次切换到 RELEASE 的时间戳
+  private canFollowTrailInRelease = false; // RELEASE 状态下是否可以跟随轨迹
 
   /**
    * Cubic Ease-In-Out 缓动函数
@@ -167,7 +175,8 @@ export class SwordSystem {
         originalIndex: i,
         trailIndex: -1, // 初始不跟随轨迹
         trailFollowSpeed: 0.15 + Math.random() * 0.2, // 随机速度 0.15-0.35
-        trailProgress: 0 // 初始进度为0
+        trailProgress: 0, // 初始进度为0
+        trackRandomSpeed: 0.02 + Math.random() * 0.08 // TRACK 状态下的随机速度
       };
       
       // 初始随机分布
@@ -214,32 +223,58 @@ export class SwordSystem {
     );
   }
 
-  private setDirectionalPosition(particle: SwordParticle, direction: THREE.Vector3) {
-    const baseDistance = 2.0 + Math.random() * 4.0;
-    const spread = 1.5;
-    
-    // 在指定方向上分布，带有一定的扩散
-    const offset = new THREE.Vector3(
-      (Math.random() - 0.5) * spread,
-      (Math.random() - 0.5) * spread,
-      (Math.random() - 0.5) * spread
-    );
-    
-    particle.targetPosition.copy(direction)
-      .multiplyScalar(baseDistance)
-      .add(offset);
-  }
-
   updateTarget(x: number, y: number, rotation: number) {
     this.centerPosition.set(x, y, 0);
+  }
+
+  updateMiddleFinger(x: number, y: number, z: number) {
+    this.middleFingerPosition.set(x, y, z);
+    
+    // 计算目标点 D
+    // 向 Z 轴发射射线（寻找 z 最大的剑，即离屏幕最近的剑）
+    // 这里的逻辑是：在 (x, y) 位置，寻找现有的剑中 z 值最符合“第一个遇到”的那个
+    // 由于是正交投影或透视投影的简化，我们直接找在所有粒子中，当前 z 值最大的那个作为参考
+    // 或者根据用户描述：从屏幕向 z 轴发射射线遇到的第一个剑
+    
+    let closestZ = -100; // 初始一个很小的值
+    let found = false;
+    
+    this.particles.forEach(p => {
+      // 找到离“屏幕”（通常 z 越大或者正方向）最近的剑
+      // 这里假设 z 越大越靠近相机
+      if (p.position.z > closestZ) {
+        closestZ = p.position.z;
+        found = true;
+      }
+    });
+    
+    if (!found) closestZ = 0;
+    
+    this.targetPointD.set(x, y, closestZ);
   }
 
   // 更新中指轨迹
   updateTrail(trail: TrailPoint[]) {
     this.currentTrail = trail;
     
+    // 如果是 RELEASE 状态，检查是否已经过了延迟时间
+    if (this.state === 'RELEASE') {
+      const elapsedSeconds = (Date.now() - this.lastReleaseTime) / 1000;
+      if (elapsedSeconds >= this.releaseTrailDelaySeconds && !this.canFollowTrailInRelease) {
+        this.canFollowTrailInRelease = true;
+        console.log(`RELEASE 延迟结束，现在可以跟随轨迹了`);
+      }
+    }
+    
     // 检查是否应该跟随轨迹
-    const shouldFollowTrail = this.state.startsWith('MIDDLE_') && trail.length > 3;
+    // TRACK 状态下：有轨迹就跟随
+    // RELEASE 状态下：必须等待延迟时间过后才能跟随
+    let shouldFollowTrail = false;
+    if (this.state === 'TRACK') {
+      shouldFollowTrail = trail.length > 3;
+    } else if (this.state === 'RELEASE') {
+      shouldFollowTrail = this.canFollowTrailInRelease && trail.length > 3;
+    }
     
     if (shouldFollowTrail && !this.isFollowingTrail) {
       // 开始跟随轨迹 - 重置所有粒子的运动进度
@@ -248,7 +283,7 @@ export class SwordSystem {
         p.trailProgress = 0; // 重置进度，开始新的先慢后快运动
       });
       this.assignParticlesToTrail();
-      console.log('开始跟随中指轨迹，轨迹点数:', trail.length);
+      console.log('开始跟随中指轨迹，轨迹点数:', trail.length, '状态:', this.state);
     } else if (!shouldFollowTrail && this.isFollowingTrail) {
       // 停止跟随轨迹
       this.isFollowingTrail = false;
@@ -305,7 +340,15 @@ export class SwordSystem {
     if (this.state === state) return;
     
     console.log(`剑系统状态变更: ${this.state} -> ${state}`);
+    const previousState = this.state;
     this.state = state;
+    
+    // 如果切换到 RELEASE 状态，记录时间并禁用轨迹跟随
+    if (state === 'RELEASE') {
+      this.lastReleaseTime = Date.now();
+      this.canFollowTrailInRelease = false;
+      console.log(`RELEASE 状态激活，${this.releaseTrailDelaySeconds}秒后开始跟随轨迹`);
+    }
     
     // 记录当前位置作为动画起始位置
     this.particles.forEach(p => {
@@ -327,8 +370,6 @@ export class SwordSystem {
   }
 
   private updateParticleTargets() {
-    const direction = new THREE.Vector3();
-    
     switch (this.state) {
       case 'FOLD':
         // 聚拢成球体 - 保持相对坐标，不在这里加 centerPosition
@@ -344,46 +385,9 @@ export class SwordSystem {
         });
         break;
         
-      case 'MIDDLE_UP':
-        direction.set(0, 1, 0);
-        this.particles.forEach(particle => {
-          this.setDirectionalPosition(particle, direction);
-        });
-        break;
-        
-      case 'MIDDLE_DOWN':
-        direction.set(0, -1, 0);
-        this.particles.forEach(particle => {
-          this.setDirectionalPosition(particle, direction);
-        });
-        break;
-        
-      case 'MIDDLE_LEFT':
-        direction.set(-1, 0, 0);
-        this.particles.forEach(particle => {
-          this.setDirectionalPosition(particle, direction);
-        });
-        break;
-        
-      case 'MIDDLE_RIGHT':
-        direction.set(1, 0, 0);
-        this.particles.forEach(particle => {
-          this.setDirectionalPosition(particle, direction);
-        });
-        break;
-        
-      case 'MIDDLE_FORWARD':
-        direction.set(0, 0, 1);
-        this.particles.forEach(particle => {
-          this.setDirectionalPosition(particle, direction);
-        });
-        break;
-        
-      case 'MIDDLE_BACKWARD':
-        direction.set(0, 0, -1);
-        this.particles.forEach(particle => {
-          this.setDirectionalPosition(particle, direction);
-        });
+      case 'TRACK':
+        // TRACK 状态：粒子将跟随中指轨迹，不需要设置固定目标位置
+        // 实际的轨迹跟随在 update() 方法中通过 isFollowingTrail 控制
         break;
     }
   }
@@ -405,8 +409,11 @@ export class SwordSystem {
       // 这里的 targetPos 最终应该是世界坐标
       let targetPos = new THREE.Vector3();
       
-      // 如果正在跟随轨迹且轨迹有足够的点
-      if (this.isFollowingTrail && this.currentTrail.length > 1) {
+      // TRACK 状态下的特殊处理：跟随中指位置
+      if (this.state === 'TRACK') {
+        // 目标点 D：共享的 targetPointD
+        targetPos.copy(this.targetPointD);
+      } else if (this.isFollowingTrail && this.currentTrail.length > 1) {
         const linearT = i / (this.count - 1);
         const easedT = this.easeInOutCubic(linearT);
         const floatIndex = easedT * (this.currentTrail.length - 1);
@@ -449,7 +456,10 @@ export class SwordSystem {
       
       // 使用每把剑的独立速度进行跟随
       let moveFactor: number;
-      if (this.isFollowingTrail) {
+      if (this.state === 'TRACK') {
+        // TRACK 状态下使用随机速度
+        moveFactor = particle.trackRandomSpeed;
+      } else if (this.isFollowingTrail) {
         // 轨迹跟随状态：使用每把剑的独立速度和缓动进度
         const easeInQuad = (t: number): number => t * t;
         const easedProgress = easeInQuad(particle.trailProgress);
@@ -512,5 +522,23 @@ export class SwordSystem {
     });
     
     this.swordParticles.instanceMatrix.needsUpdate = true;
+  }
+  
+  /**
+   * 获取 RELEASE 状态下的轨迹跟随信息
+   * @returns {remainingSeconds: number, canFollow: boolean}
+   */
+  getReleaseTrailInfo() {
+    if (this.state !== 'RELEASE') {
+      return { remainingSeconds: 0, canFollow: false };
+    }
+    
+    const elapsedSeconds = (Date.now() - this.lastReleaseTime) / 1000;
+    const remainingSeconds = Math.max(0, this.releaseTrailDelaySeconds - elapsedSeconds);
+    
+    return {
+      remainingSeconds: remainingSeconds,
+      canFollow: this.canFollowTrailInRelease
+    };
   }
 }

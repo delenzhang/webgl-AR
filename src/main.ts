@@ -104,7 +104,7 @@ class App {
         this.ctx2d.restore();
         
         // 然后绘制手势识别结果（如果有）
-        if (this.latestHandResults) {
+        if (this.latestHandResults && this.shouldDrawHand) {
           this.drawHandLandmarks(this.ctx2d, this.latestHandResults);
         }
       }
@@ -159,6 +159,14 @@ class App {
       this.swordSystem.updateTarget(targetX, targetY, rotation);
     }
 
+    // TRACK 状态下更新中指位置
+    if (gesture === 'TRACK') {
+      const middlePos = this.handTracker.getCurrentMiddlePosition(results);
+      if (middlePos) {
+        this.swordSystem.updateMiddleFinger(middlePos.x, middlePos.y, middlePos.z);
+      }
+    }
+
     // 更新轨迹跟随
     const trail = this.handTracker.getMiddleFingerTrail();
     this.swordSystem.updateTrail(trail);
@@ -185,6 +193,9 @@ class App {
     const trail = this.handTracker.getMiddleFingerTrail();
     const isMoving = this.handTracker.isMoving();
     
+    // 获取 RELEASE 状态的轨迹跟随信息
+    const releaseInfo = this.swordSystem.getReleaseTrailInfo();
+    
     // 输出状态到控制台
     console.log(`手势状态: ${this.getGestureName(gesture)}`);
     console.log(`手部运动: ${isMoving ? '运动中' : '静止'}`);
@@ -194,14 +205,33 @@ class App {
     // 更新UI显示
     const hintEl = document.getElementById('gesture-hint');
     if (hintEl) {
-      if (gesture.startsWith('MIDDLE_')) {
+      if (gesture === 'TRACK') {
+        // TRACK 状态：显示轨迹跟随状态
         hintEl.innerHTML = `
           <div>检测到: ${this.getGestureName(gesture)}</div>
           <div style="font-size: 12px; opacity: 0.6;">
-            方向向量: (${dx.toFixed(2)}, ${dy.toFixed(2)}, ${dz.toFixed(2)})
+            中指方向: (${dx.toFixed(2)}, ${dy.toFixed(2)}, ${dz.toFixed(2)})
           </div>
           <div style="font-size: 12px; opacity: 0.8; color: ${isMoving ? '#ff6600' : '#00ffaa'};">
-            手部状态: ${isMoving ? '运动中 🏃' : '静止 🛑'} | 轨迹跟随: ${trail.length > 3 ? '激活' : '待机'} (${trail.length}点)
+            手部状态: ${isMoving ? '运动中 🏃' : '静止 🛑'} | 轨迹跟随: ${trail.length > 3 ? '激活 ✓' : '待机'} (${trail.length}点)
+          </div>
+        `;
+      } else if (gesture === 'RELEASE') {
+        // RELEASE 状态显示倒计时
+        const countdownText = releaseInfo.canFollow 
+          ? '<span style="color: #00ffaa;">✓ 可以跟随轨迹</span>' 
+          : `<span style="color: #ffaa00;">⏳ ${releaseInfo.remainingSeconds.toFixed(1)}秒后激活轨迹跟随</span>`;
+        
+        hintEl.innerHTML = `
+          <div>${this.getGestureName(gesture)}</div>
+          <div style="font-size: 12px; opacity: 0.6;">
+            手部状态: ${isMoving ? '运动中 🏃' : '静止 🛑'}
+          </div>
+          <div style="font-size: 14px; font-weight: bold; margin-top: 4px;">
+            ${countdownText}
+          </div>
+          <div style="font-size: 12px; opacity: 0.6;">
+            轨迹点数: ${trail.length}
           </div>
         `;
       } else {
@@ -227,8 +257,8 @@ class App {
       this.swordSystem.setState(gesture as any);
     }
     
-    // 如果不是中指方向手势，清空轨迹
-    if (!gesture.startsWith('MIDDLE_')) {
+    // 只有在 FOLD 状态时才清空轨迹（因为RELEASE和TRACK都需要轨迹）
+    if (gesture === 'FOLD' || gesture === 'NONE') {
       this.handTracker.clearTrail();
     }
   }
@@ -237,12 +267,7 @@ class App {
     switch (gesture) {
       case 'FOLD': return '收起 (拳头)';
       case 'RELEASE': return '释放 (五指撑开)';
-      case 'MIDDLE_UP': return '中指向上';
-      case 'MIDDLE_DOWN': return '中指向下';
-      case 'MIDDLE_LEFT': return '中指向左';
-      case 'MIDDLE_RIGHT': return '中指向右';
-      case 'MIDDLE_FORWARD': return '中指向前';
-      case 'MIDDLE_BACKWARD': return '中指向后';
+      case 'TRACK': return '跟踪模式 (中指+食指并拢)';
       default: return '寻找手势...';
     }
   }

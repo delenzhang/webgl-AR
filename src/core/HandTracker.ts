@@ -3,7 +3,7 @@ import { Camera } from '@mediapipe/camera_utils';
 import { drawConnectors, drawLandmarks } from '@mediapipe/drawing_utils';
 import * as THREE from 'three';
 
-export type GestureState = 'FOLD' | 'RELEASE' | 'MIDDLE_UP' | 'MIDDLE_DOWN' | 'MIDDLE_LEFT' | 'MIDDLE_RIGHT' | 'MIDDLE_FORWARD' | 'MIDDLE_BACKWARD' | 'NONE';
+export type GestureState = 'FOLD' | 'RELEASE' | 'TRACK' | 'NONE';
 
 interface TrailPoint {
   position: THREE.Vector3;
@@ -97,7 +97,7 @@ export class HandTracker {
     }
   }
 
-  // 手势识别逻辑：检查中指方向，拳头为收起，五指撑开为释放
+  // 手势识别逻辑：检查拳头、五指撑开、中指+食指并拢
   detectGesture(results: Results): GestureState {
     if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) {
       return 'NONE';
@@ -116,17 +116,19 @@ export class HandTracker {
 
       // 判断五指撑开 (RELEASE): 所有手指都张开
       const isReleased = this.checkReleased(landmarks);
-      if (isReleased) return 'RELEASE';
+      if (isReleased) {
+        // RELEASE 状态下也要更新中指轨迹，用于剑的跟随
+        this.updateMiddleFingerTrail(landmarks);
+        return 'RELEASE';
+      }
     }
 
-    // 检查是否只有中指和食指撑开并拢，其他手指握住
+    // 检查是否只有中指和食指撑开并拢，其他手指握住 -> TRACK 状态
     const isIndexMiddleOpen = this.checkIndexMiddleOpen(landmarks);
     if (isIndexMiddleOpen) {
       // 更新中指轨迹
       this.updateMiddleFingerTrail(landmarks);
-      
-      // 检测中指方向（6个方向：上下左右前后）
-      return this.checkMiddleFingerDirection(landmarks);
+      return 'TRACK';
     }
 
     // 默认返回 NONE
@@ -160,19 +162,19 @@ export class HandTracker {
       Math.pow(indexTip.y - middleTip.y, 2) +
       Math.pow(indexTip.z - middleTip.z, 2)
     );
-    const indexMiddleClose = indexMiddleDist < 0.06; // 调整阈值，表示并拢
+    const indexMiddleClose = indexMiddleDist < 0.12; // 调大阈值，原为 0.06，更容易识别并拢状态
     
     // 检查无名指是否握住
     const ringTip = landmarks[16];
     const ringPip = landmarks[14];
     const ringMcp = landmarks[13];
-    const ringFolded = ringTip.y > ringPip.y + 0.01; // 无名指握住，增加阈值
+    const ringFolded = ringTip.y > ringPip.y; // 无名指握住，放宽阈值
     
     // 检查小指是否握住
     const pinkyTip = landmarks[20];
     const pinkyPip = landmarks[18];
     const pinkyMcp = landmarks[17];
-    const pinkyFolded = pinkyTip.y > pinkyPip.y + 0.01; // 小指握住，增加阈值
+    const pinkyFolded = pinkyTip.y > pinkyPip.y; // 小指握住，放宽阈值
     
     // 额外检查：确保食指和中指的长度足够（避免误判弯曲的手指）
     const indexLength = Math.sqrt(
@@ -183,76 +185,11 @@ export class HandTracker {
       Math.pow(middleTip.x - middleMcp.x, 2) + 
       Math.pow(middleTip.y - middleMcp.y, 2)
     );
-    const fingersExtended = indexLength > 0.08 && middleLength > 0.08;
+    const fingersExtended = indexLength > 0.05 && middleLength > 0.05; // 调小长度阈值，原为 0.08
     
     // 只有中指和食指张开并拢，其他手指都握住，且手指充分伸展
-    return thumbFolded && indexOpen && middleOpen && indexMiddleClose && 
+    return indexOpen && middleOpen && indexMiddleClose && 
            ringFolded && pinkyFolded && fingersExtended;
-  }
-  
-  // 检查中指方向（6个方向：上下左右前后）
-  private checkMiddleFingerDirection(landmarks: any[]): GestureState {
-    // 中指关键点索引
-    const middleTip = landmarks[12];      // 中指指尖
-    const middlePip = landmarks[10];      // 中指第一关节（PIP）
-    const middleMcp = landmarks[9];       // 中指根部（MCP）
-    
-    // 计算中指相对于第一关节的方向向量（3D）
-    const dx = middleTip.x - middlePip.x;
-    const dy = middleTip.y - middlePip.y;
-    const dz = middleTip.z - middlePip.z; // z 是相对深度，z 值越小表示越靠近摄像头（向前）
-    
-    // 使用阈值判断方向，避免微小抖动
-    const xyThreshold = 0.04;  // 水平和垂直方向的阈值
-    const zThreshold = 0.015;  // z 方向的阈值（前后方向）
-    
-    const absDx = Math.abs(dx);
-    const absDy = Math.abs(dy);
-    const absDz = Math.abs(dz);
-    
-    // 计算向量的总长度，用于归一化判断
-    const totalLength = Math.sqrt(dx * dx + dy * dy + dz * dz);
-    
-    // 如果向量太短，说明手指没有明确指向，返回 NONE
-    if (totalLength < 0.03) {
-      return 'NONE';
-    }
-    
-    // 归一化各个分量，便于比较
-    const normalizedDx = dx / totalLength;
-    const normalizedDy = dy / totalLength;
-    const normalizedDz = dz / totalLength;
-    
-    // 优先级：前后 > 上下 > 左右
-    // 首先检查前后方向（z轴），这个方向最难检测，所以优先处理
-    if (Math.abs(normalizedDz) > 0.4) {
-      if (normalizedDz < -0.4) {
-        return 'MIDDLE_FORWARD';  // 向前（z 值更小，更靠近摄像头）
-      } else if (normalizedDz > 0.4) {
-        return 'MIDDLE_BACKWARD'; // 向后（z 值更大，远离摄像头）
-      }
-    }
-    
-    // 然后检查上下方向（y轴）
-    if (Math.abs(normalizedDy) > 0.5) {
-      if (normalizedDy < -0.5) {
-        return 'MIDDLE_UP';    // 向上（y 值更小）
-      } else if (normalizedDy > 0.5) {
-        return 'MIDDLE_DOWN';  // 向下（y 值更大）
-      }
-    }
-    
-    // 最后检查左右方向（x轴）
-    if (Math.abs(normalizedDx) > 0.5) {
-      if (normalizedDx < -0.5) {
-        return 'MIDDLE_LEFT';   // 向左（x 值更小）
-      } else if (normalizedDx > 0.5) {
-        return 'MIDDLE_RIGHT'; // 向右（x 值更大）
-      }
-    }
-    
-    // 如果方向不明确，默认返回 NONE
-    return 'NONE';
   }
   
   // 检查五指是否撑开
