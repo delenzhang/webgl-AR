@@ -27,7 +27,7 @@ interface SwordParticle {
 export class SwordSystem {
   private swordParticles!: THREE.InstancedMesh; // 使用 ! 表示会在 constructor 中初始化
   private particles: SwordParticle[] = [];
-  private count: number = 200;
+  private count: number = 2000;
   private dummy = new THREE.Object3D();
   
   // 状态参数
@@ -38,7 +38,7 @@ export class SwordSystem {
   private animationProgress = 0;
   
   // 粒子系统参数
-  public sphereRadius = 1.6; // 聚拢时的球体半径，调小一点更贴合拳头
+  public sphereRadius = 3; // 聚拢时的球体半径，调小一点更贴合拳头
   private scatterRadius = 18; // 散开时的最大半径
   
   // 旋转控制参数

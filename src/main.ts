@@ -34,7 +34,34 @@ class App {
       });
     }
 
+    this.initFullscreen();
     this.init();
+  }
+
+  private initFullscreen() {
+    const btn = document.getElementById('fullscreen-btn');
+    if (!btn) return;
+
+
+    btn.addEventListener('click', () => {
+      if (!document.fullscreenElement) {
+        document.body.requestFullscreen().catch(err => {
+          console.error(`无法进入全屏模式: ${err.message}`);
+        });
+      } else {
+        if (document.exitFullscreen) {
+          document.exitFullscreen();
+        }
+      }
+    });
+
+    document.addEventListener('fullscreenchange', () => {
+      if (document.fullscreenElement) {
+        btn.innerText = '退出全屏';
+      } else {
+        btn.innerText = '进入全屏';
+      }
+    });
   }
 
   async init() {
