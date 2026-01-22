@@ -42,6 +42,7 @@
         position: absolute; bottom: 30px; left: 30px; color: #fff;
         text-shadow: 0 0 10px rgba(0,255,100,0.8);
         z-index: 1000;
+
       }
       #status, #gesture-hint {
         pointer-events: none;
@@ -50,13 +51,10 @@
         position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
         color: #00ffaa; font-size: 20px; letter-spacing: 4px;
         text-align: center;
+        z-index: 100;
       }
       .hint { font-size: 14px; opacity: 0.7; margin-top: 8px; }
       #fullscreen-btn {
-        position: fixed;
-        top: 20px;
-        right: 20px;
-        z-index: 9999;
         background: rgba(0, 255, 170, 0.2);
         border: 1px solid #00ffaa;
         color: #00ffaa;
@@ -78,7 +76,7 @@
   </head>
   <body>
     <div id="app">
-       <button id="fullscreen-btn">进入全屏</button>
+      
       <div id="video-container">
         <video id="input-video" playsinline></video>
         <canvas id="output-canvas"></canvas>
@@ -86,13 +84,14 @@
       <div id="ui">
         <div id="status">状态: 初始化中...</div>
         <div id="gesture-hint" class="hint">准备识别手势...</div>
-         <button id="fullscreen-btn">进入全屏</button>
       </div>
-      <div id="loading-screen" class="loading">
+      
+    </div>
+    <div id="loading-screen" class="loading">
         <div>御剑术引擎载入中...</div>
         <div class="hint">请允许摄像头访问以开始</div>
+        <button id="fullscreen-btn">现在开始</button>
       </div>
-    </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

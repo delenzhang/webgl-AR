@@ -7,7 +7,7 @@ import * as THREE from 'three';
 import gsap from 'gsap';
 
 class App {
-  private handTracker: HandTracker;
+  private handTracker: HandTracker = new HandTracker();
   private sceneManager: SceneManager;
   private swordSystem: SwordSystem;
   private currentGesture: GestureState = 'NONE';
@@ -17,6 +17,10 @@ class App {
   private latestHandResults: any = null; // 存储最新的手势识别结果
   
   constructor() {
+     this.initFullscreen();
+  }
+
+  start() {
     this.handTracker = new HandTracker();
     this.sceneManager = new SceneManager(document.getElementById('app')!);
     this.swordSystem = new SwordSystem(this.sceneManager.scene);
@@ -34,7 +38,7 @@ class App {
       });
     }
 
-    this.initFullscreen();
+   
     this.init();
   }
 
@@ -45,9 +49,15 @@ class App {
 
     btn.addEventListener('click', () => {
       if (!document.fullscreenElement) {
-        document.body.requestFullscreen().catch(err => {
+        document.body.requestFullscreen().then(res => {
+          setTimeout(() => {
+            this.start();
+          }, 2000)
+          
+        }).catch(err => {
           console.error(`无法进入全屏模式: ${err.message}`);
         });
+       
       } else {
         if (document.exitFullscreen) {
           document.exitFullscreen();
