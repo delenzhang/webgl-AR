@@ -251,3 +251,7 @@ MIT License
 ---
 
 **Made with ❤️ and TypeScript**
+
+
+# todo
+fingerpose 检测手势变化。

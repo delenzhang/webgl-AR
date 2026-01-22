@@ -24,7 +24,7 @@ export class Rasengan {
     this.group = new THREE.Group();
 
     // 1. 核心球体
-    const coreGeom = new THREE.SphereGeometry(0.5, 64, 64);
+    const coreGeom = new THREE.SphereGeometry(0.375, 64, 64);
     const coreMat = new THREE.ShaderMaterial({
       vertexShader: rasenganCoreVert,
       fragmentShader: rasenganCoreFrag,
@@ -41,9 +41,9 @@ export class Rasengan {
 
     // 2. 外部风力层 (重新开启旋转，速度适中以展现风的流动感)
     const shellConfigs = [
-      { size: 0.51, speed: 4.0, color: new THREE.Color(0xffffff) },
-      { size: 0.53, speed: -5.0, color: new THREE.Color(0xffffff) },
-      { size: 0.56, speed: 7.0, color: new THREE.Color(0xffffff) }
+      { size: 0.3825, speed: 4.0, color: new THREE.Color(0xffffff) },
+      { size: 0.3975, speed: -5.0, color: new THREE.Color(0xffffff) },
+      { size: 0.42, speed: 7.0, color: new THREE.Color(0xffffff) }
     ];
 
     shellConfigs.forEach(config => {
@@ -69,8 +69,8 @@ export class Rasengan {
 
     // 3. 丝带层 (Ribbons)
     const ribbonConfigs = [
-      { size: 0.54, speed: 12.0 },
-      { size: 0.57, speed: -15.0 }
+      { size: 0.405, speed: 12.0 },
+      { size: 0.4275, speed: -15.0 }
     ];
 
     ribbonConfigs.forEach(config => {
@@ -94,7 +94,7 @@ export class Rasengan {
     });
 
     // 4. 外层半透明青蓝色保护壳 (和内部球同样大小)
-    const outerShellGeom = new THREE.SphereGeometry(0.58, 64, 64); // 与丝带层大小相近
+    const outerShellGeom = new THREE.SphereGeometry(0.435, 64, 64); // 与丝带层大小相近
     const outerShellMat = new THREE.ShaderMaterial({
       vertexShader: rasenganOuterShellVert,
       fragmentShader: rasenganOuterShellFrag,
@@ -118,8 +118,8 @@ export class Rasengan {
 
   private createAirBelts() {
     const beltCount = 6; // 增加到6个风带
-    const beltRadius = 0.08; // 风带半径（粗细）
-    const orbitRadius = 0.5; // 初始轨道半径（会在着色器中动态扩展）
+    const beltRadius = 0.06; // 风带半径（粗细）
+    const orbitRadius = 0.375; // 初始轨道半径（会在着色器中动态扩展）
     
     for (let i = 0; i < beltCount; i++) {
       const angle = (i / beltCount) * Math.PI * 2;
