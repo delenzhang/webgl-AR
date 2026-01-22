@@ -2,3 +2,6 @@
 node_modules
 .pnpm-lockfile
 .pnpm-store
+
+# MediaPipe 模型文件（大文件，从 npm 获取）
+public/mediapipe/
